@@ -176,7 +176,7 @@ Signing the image secures it against tampering and allows others to verify its a
 - After pushing the image, sign it using Docker Content Trust:
 
   ```
-  docker trust sign <dockerhub-username>/go-hello
+  docker trust sign <dockerhub-username>/go-hello:latest
   ```
 
 #### **Run the Signed Container**
@@ -186,13 +186,13 @@ Running the signed image verifies its integrity and demonstrates the successful 
 - Pull the signed image from Docker Hub:
 
   ```
-  docker pull <dockerhub-username>/go-hello
+  docker pull <dockerhub-username>/go-hello:latest
   ```
 
 - Run the container again:
 
   ```
-  docker run <dockerhub-username>/go-hello
+  docker run <dockerhub-username>/go-hello:latest
   ```
 
 - Observe that the container runs successfully, and you see:
