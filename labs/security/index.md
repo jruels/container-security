@@ -103,21 +103,26 @@ Cryptographic signing keys are used to sign Docker images, ensuring their authen
 
 The provided Dockerfile packages a simple Go application into a container, creating the base image for the lab. Without signing, it cannot be used with Content Trust enabled. The provided Dockerfile creates a simple Go application and packages it into a container. This forms the base of your containerized application, but the image is not yet signed, which will cause issues when Content Trust is enabled.
 
-- Save the following Dockerfile to a file named `Dockerfile` in the current directory:
+Create a file named main.go with the followin content
 
-  ```
-  # syntax=docker/dockerfile:1
-  FROM golang:1.23 AS build
-  WORKDIR /src
-  COPY <<EOF /src/main.go
-  package main
+```shell
+package main
   
   import "fmt"
   
   func main() {
     fmt.Println("hello, world")
   }
-  EOF
+```
+
+- Save the following Dockerfile to a file named `Dockerfile` in the current directory:
+
+  ```
+  # syntax=docker/dockerfile:1
+  FROM golang:1.23 AS build
+  WORKDIR /src
+  COPY main.go .
+  
   RUN go build -o /bin/hello ./main.go
   
   FROM scratch
@@ -241,32 +246,3 @@ COPY --from=0 /go/bin/hello /app
 Now to improve security further, let's make this application not run as root. You will need to use the `USER` dockerfile command. You will also need an `/etc/passwd` file in your new image. You can get one from a number of places, or create one, but it's probably simplest now to copy the file from the golang build container. To find out what unprivileged users are in that file you can `docker run` the golang build image and `cat /etc/passwd`.
 
 
-## Linux Capabilities
-
-Run this command to see the current linux capabilities:
-```
-sudo /sbin/capsh --print
-```
-
-Now start this container that immediately installs the capsh program:
-```
-docker run -it debian /bin/sh -c "apt-get update && apt-get install -qq libcap2-bin && bash"
-```
-
-And then from inside the container run:
-```
-/sbin/capsh --print
-```
-
-Note the difference between the output on the host and inside the container. You can also try starting containers with dropped capabilities:
-
-
-```
-docker run --cap-drop=net_raw  -it debian /bin/sh -c "apt-get update && apt-get install -qq libcap2-bin && bash"
-```
-And once again run:
-```
-/sbin/capsh --print
-```
-
-Note the dropped capability is missing from the output inside the container.
