@@ -1,11 +1,16 @@
 
-## Docker namespace exploration
+# Namespace and Cgroups Exploration 
 
+---
+
+## Namespace exploration
+
+---
 
 ## Explore pid namespace
 
-Take a look at the current processes
-```
+Take a look at the current processes:
+```bash
 ps aux
 ```
 
@@ -19,165 +24,91 @@ Take a look around:
 ps aux
 ```
 
-What is pid 1 in the new namespace?
+What is PID 1 in the new namespace?
 
-Inside the new namespace, run a long lived process like `top`. Then in a separate ssh connection to the docker host look at the current processes
+Inside the new namespace, run a long-lived process like `top`. Then in a separate SSH connection to the Docker host, look at the current processes:
 ```bash
 ps aux
 ```
-Find the namespaced processes? What PIDs do they have?
 
-Feel free to explore with other commands. When you're done exploring just `exit`
+Find the namespaced processes—what PIDs do they have?
 
-## Explore docker namespaces
+Exit when you're done exploring.
+
+---
+
+## Explore Docker namespaces
+
 Run any container, for example:
 ```bash
-#sleep for 5 minutes and exit
+# Sleep for 5 minutes and exit
 docker run --detach alpine sleep 300
 ```
 
-Copy the container id for your running container, and export it as `$CID` 
-
+Copy the container ID for your running container, and export it:
 ```bash
-export CID=<container ID from above>
+export CID=<container ID>
 ```
 
 ### docker exec
-Use the `docker exec` utility to explore the inside of the container:
+Explore inside the container:
 ```bash
 docker exec -it $CID /bin/sh
-#Explore within the container, e.g.
+# Look around
 ps aux
 ls /
-# ...
-# when you are done just exit
 exit
 ```
 
-Now use the more general linux `nsenter` utility to enter the container's namespaces
-
+Now use the more general Linux `nsenter` utility to enter the container's namespaces:
 
 ```bash
-PID=$(docker inspect --format {% raw %}{{.State.Pid}}{% endraw %} $CID)
+PID=$(docker inspect --format '{{.State.Pid}}' $CID)
 sudo nsenter --target $PID --mount --uts --ipc --net --pid /bin/sh
 ```
 
 Look around, and `exit` when done.
 
-## Explore the memory cgroup limits
+---
 
+## Explore memory limits with cgroups v2
 
-```bash
-sudo cgcreate -a ubuntu -g memory:playground
-```
+> In cgroups v2, there's a **unified hierarchy** under `/sys/fs/cgroup`.
 
-See what's in it
-```bash
-ls -la /sys/fs/cgroup/memory/playground/
-```
-
-`memory.limit_in_bytes` looks useful, let's try tweaking that.
-
-Let's set a 10MiB memory limit for the cgroup
+Install memhog (if not installed):
 
 ```bash
-echo 10485760 | tee /sys/fs/cgroup/memory/playground/memory.limit_in_bytes
+sudo apt install -y stress-ng
 ```
 
-Let's try running a memory hogging program:
+Create a cgroup:
 
 ```bash
-#Will use 100MiB
-memhog 104857600 1
+sudo mkdir /sys/fs/cgroup/playground
 ```
 
-Now let's join the cgroup and see what happens
+Set a 10MiB memory limit:
 ```bash
-sudo cgexec -g memory:playground bash
-
-#Will use 10MiB
-memhog 10485760 1
+echo $((10 * 1024 * 1024)) | sudo tee /sys/fs/cgroup/playground/memory.max
 ```
 
-You should see this:
-> allocating 10485760 bytes...   
-> writing 10485760 bytes...    
-> Killed   
-
-What is the exit code? What does this exit code signify?
+Allow your user to run inside this cgroup:
 ```bash
-echo $?
+echo $$ | sudo tee /sys/fs/cgroup/playground/cgroup.procs
 ```
 
-If you want to delete the cgroup you can run
+To run inside the cgroup more formally:
 ```bash
-sudo cgdelete memory:playground
+sudo systemd-run --unit=limitedmem --property=MemoryMax=10M --pty bash
 ```
 
-## Explore the cgroup namespace
-
-In addition to cgcreate, we can create cgroups by simply creating a folder (because in linux almost everything is a file).
-
-In this example we'll be working in the freezer subsystem, which is used to schedule processes on computer. But we won't actually be using the freezer subsystem, other than for the cgroups.
-
+Then, in that shell, try exceeding the limit:
 ```bash
-#Create a cgroup
-sudo mkdir -p /sys/fs/cgroup/freezer/mycgroup
+stress-ng --vm 1 --vm-bytes 100M --vm-hang 0
 ```
 
-Note that your new cgroup is automatically populated by the kernel
+Exit and clean up:
 ```bash
-ls -la /sys/fs/cgroup/freezer/mycgroup
+sudo rmdir /sys/fs/cgroup/playground
 ```
 
-Get your shell PID
-```bash
-echo $$
-# 942
-```
-
-Add your shell to the cgroup
-```bash
-echo 942 | sudo tee /sys/fs/cgroup/freezer/mycgroup/cgroup.procs
-```
-
-Verify your shell is now in the cgroup
-```bash
-grep freezer /proc/self/cgroup
-# 6:freezer:/mycgroup
-```
-
-Now we'll use unshare again to create a new process running in a new cgroup and mount namespace
-
-```bash
-sudo unshare -C bash
-```
-
-We are now running bash inside of the new namespace. Let's take a look at our freezer cgroup now:
-
-```bash
-grep freezer /proc/self/cgroup
-# 6:freezer:/
-```
-
-Note that you don't see `/mycgroup` because the parent has made the cgroup relative to its parent, which is `/mycgroup`. In other words, this process is shown to be the root `/` of the parent `/mycgroup`.
-
-Now get the PID of your namespaced shell and keep it running.
-```bash
-echo $$
-# 1032
-```
-
-Now from your new shell in just the default namespaces, run this setting the correct PID from above:
-```bash
-grep freezer /proc/1032/cgroup
-# 6:freezer:/mycgroup
-```
-
-This verifies that your namespaced process is in the cgroup "mycgroup", but your namespaced process can't tell from looking at its cgroups.
-
-### Cgroup Namespace Exercise
-
-How can the namespaced shell above figure what cgroup it is in? (hint: despite the cgroup namespace with relative path, there is still at least one way)
-
-# Congrats
